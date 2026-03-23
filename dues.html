@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        :root { --p: #1a237e; --bg: #f4f7f6; --green: #25D366; }
+        body { font-family: 'Poppins', sans-serif; background: var(--bg); padding: 15px; margin: 0; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .controls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        select, button { padding: 12px; border-radius: 8px; font-weight: bold; border: 2px solid #ddd; outline: none; }
+        .btn-fetch { background: var(--p); color: white; border: none; cursor: pointer; }
+        .btn-all { width: 100%; padding: 15px; background: var(--green); color: white; border: none; border-radius: 8px; font-weight: bold; margin-bottom: 15px; display: none; cursor: pointer; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+        th, td { padding: 12px 8px; border-bottom: 1px solid #eee; text-align: left; }
+        th { background: #f8f9fa; color: #555; }
+        .total-price { color: #d32f2f; font-weight: 700; font-size: 14px; }
+        .details { font-size: 10px; color: #777; line-height: 1.2; }
+        @media (max-width: 600px) { .controls { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div style="text-align:center; margin-bottom:20px;">
+        <h2 style="margin:0; color:var(--p);">IQRA PUBLIC SCHOOL</h2>
+        <p style="margin:0; font-size:12px;">Dues Reminder (Class-wise Filters)</p>
+    </div>
+
+    <div class="controls">
+        <select id="sel_class">
+            <option value="ALL">-- All Classes --</option>
+            </select>
+        <select id="sel_month">
+            <option value="">-- Select Month --</option>
+            <option>January</option><option>February</option><option>March</option><option>April</option>
+            <option>May</option><option>June</option><option>July</option><option>August</option>
+            <option>September</option><option>October</option><option>November</option><option>December</option>
+        </select>
+        <button class="btn-fetch" onclick="loadEverything()">🔍 SEARCH</button>
+    </div>
+
+    <button id="send-all-btn" class="btn-all" onclick="sendToAll()">📤 SEND REMINDERS TO ALL LISTED</button>
+    <div id="list-container"></div>
+</div>
+
+<script>
+    const URL = "https://script.google.com/macros/s/AKfycbwxZHV14NDzi0gfhkgI2dGBMzKaGYV4oucJJ3LZ7w-OoFcMzEGwv0rGYkYANdlhNXcj/exec";
+    let pendingData = [];
+    let feesStructure = {};
+
+    window.onload = async () => {
+        // Load classes from FeesStructure sheet automatically
+        let res = await fetch(URL + "?action=getFees");
+        feesStructure = await res.json();
+        let classSelect = document.getElementById('sel_class');
+        Object.keys(feesStructure).forEach(cls => {
+            classSelect.innerHTML += `<option value="${cls}">${cls}</option>`;
+        });
+    };
+
+    async function loadEverything() {
+        let month = document.getElementById('sel_month').value;
+        let selectedClass = document.getElementById('sel_class').value;
+        if(!month) return Swal.fire('Error', 'Month select karein', 'warning');
+        
+        let container = document.getElementById('list-container');
+        container.innerHTML = "<p style='text-align:center;'>Fetching Records...</p>";
+        document.getElementById('send-all-btn').style.display = "none";
+        pendingData = [];
+
+        try {
+            let res = await fetch(URL + "?action=getReportData&month=" + month);
+            let data = await res.json();
+            
+            let html = `<table><thead><tr><th>Student</th><th>Calculation</th><th>Total</th><th>WA</th></tr></thead><tbody>`;
+
+            data.rows.forEach(r => {
+                // Class filter logic
+                if(selectedClass !== "ALL" && r.class !== selectedClass) return;
+
+                let oldDue = parseFloat(r.bal) || 0;
+                let mFee = feesStructure[r.class] || 0;
+                let total = oldDue + mFee;
+
+                if(total > 0) {
+                    pendingData.push({ name: r.name, total: total, old: oldDue, new: mFee });
+                    html += `<tr>
+                        <td><b>${r.name}</b><br><small>Class: ${r.class}</small></td>
+                        <td class="details">Old: ₹${oldDue}<br>New: ₹${mFee}</td>
+                        <td class="total-price">₹${total}</td>
+                        <td><button onclick="sendMsg('${r.name}', ${total}, ${oldDue}, ${mFee})" style="background:#25D366; border:none; color:white; border-radius:50%; width:30px; height:30px; cursor:pointer;">➔</button></td>
+                    </tr>`;
+                }
+            });
+
+            container.innerHTML = (pendingData.length > 0) ? html + "</tbody></table>" : "<p style='text-align:center; color:red;'>No pending dues found.</p>";
+            if(pendingData.length > 0) document.getElementById('send-all-btn').style.display = "block";
+
+        } catch(e) { container.innerHTML = "Error loading data."; }
+    }
+
+    function sendMsg(name, total, old, current) {
+        let month = document.getElementById('sel_month').value;
+        let text = `*IQRA PUBLIC SCHOOL - FEES REMINDER*\n\nDear Parent, Student *${name}* ka fees details:\n- Previous Due: ₹${old}\n- Fee (${month}): ₹${current}\n--------------------\n*TOTAL PAYABLE: ₹${total}*\n--------------------\nKripya ise jald jama karein.\n\nThank you!`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
+    async function sendToAll() {
+        Swal.fire('Bulk Start', 'Ek-ek karke WhatsApp tabs khulenge.', 'info');
+        for (let i = 0; i < pendingData.length; i++) {
+            let p = pendingData[i];
+            sendMsg(p.name, p.total, p.old, p.new);
+            await new Promise(r => setTimeout(r, 1500)); 
+        }
+    }
+</script>
+</body>
+</html>

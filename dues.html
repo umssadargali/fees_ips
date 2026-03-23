@@ -47,8 +47,8 @@
 </div>
 
 <script>
-    const URL = "https://script.google.com/macros/s/AKfycbwxZHV14NDzi0gfhkgI2dGBMzKaGYV4oucJJ3LZ7w-OoFcMzEGwv0rGYkYANdlhNXcj/exec";
-    let allFetchedData = []; // Pura data yahan store hoga
+    const URL = "https://script.google.com/macros/s/AKfycbyTiz7_zict19-FVlQjDOVef9qxraQaSU8QFx2l9RjcAFLmwuKYMGJZ132B9Ul7aCiS/exec";
+    let allFetchedData = []; 
     let feesStructure = {};
 
     window.onload = async () => {
@@ -68,25 +68,33 @@
         try {
             let res = await fetch(URL + "?action=getReportData&month=" + month);
             let data = await res.json();
-            allFetchedData = data.rows;
-            renderTable(allFetchedData);
+            
+            if(data.rows && data.rows.length > 0) {
+                allFetchedData = data.rows;
+                filterTable(); // Naya filter call
+            } else {
+                container.innerHTML = "<p style='text-align:center; color:red; margin-top:20px;'>❌ No pending dues found.</p>";
+            }
         } catch(e) { 
             container.innerHTML = "<p style='text-align:center; color:red;'>Data load nahi ho saka.</p>"; 
         }
     }
 
-    // Table dikhane ka function
-    function renderTable(rows) {
+    function filterTable() {
         let container = document.getElementById('list-container');
         let filterText = document.getElementById('class_filter').value.toLowerCase();
         let currentMonth = document.getElementById('sel_month').value;
-        
+
+        if (allFetchedData.length === 0) return;
+
         let html = `<table><thead><tr><th>Student</th><th>Calculation</th><th>Total</th><th>WA</th></tr></thead><tbody>`;
         let count = 0;
 
-        rows.forEach(r => {
-            // Live Filtering Logic
-            if (filterText && !r.class.toLowerCase().includes(filterText)) return;
+        allFetchedData.forEach(r => {
+            // Live Search Filter
+            let studentClass = String(r.class).toLowerCase();
+            let studentName = String(r.name).toLowerCase();
+            if (filterText && !studentClass.includes(filterText) && !studentName.includes(filterText)) return;
 
             let oldDue = parseFloat(r.bal) || 0;
             let mFee = feesStructure[r.class] || 0;
@@ -96,7 +104,7 @@
                 count++;
                 html += `<tr>
                     <td><b>${r.name}</b><br><small>Class: ${r.class}</small></td>
-                    <td class="details">Old: ₹${oldDue}<br>New: ₹${mFee}</td>
+                    <td class="details">Old: ₹${oldDue}<br>New (${currentMonth}): ₹${mFee}</td>
                     <td class="total-price">₹${total}</td>
                     <td>
                         <button class="wa-btn" onclick="sendMsg('${r.name}', ${total}, ${oldDue}, ${mFee})">
@@ -107,19 +115,10 @@
             }
         });
 
-        container.innerHTML = (count > 0) ? html + "</tbody></table>" : "<p style='text-align:center; color:red; margin-top:20px;'>No pending dues found for this class.</p>";
+        container.innerHTML = (count > 0) ? html + "</tbody></table>" : "<p style='text-align:center; color:red; margin-top:20px;'>❌ No pending dues found.</p>";
         let sendBtn = document.getElementById('send-all-btn');
-        if(count > 0) {
-            sendBtn.style.display = "block";
-            sendBtn.innerText = `📤 SEND REMINDERS TO ALL (${count})`;
-        } else {
-            sendBtn.style.display = "none";
-        }
-    }
-
-    // Type karte hi table update hoga
-    function filterTable() {
-        if(allFetchedData.length > 0) renderTable(allFetchedData);
+        sendBtn.style.display = (count > 0) ? "block" : "none";
+        sendBtn.innerText = `📤 SEND REMINDERS TO ALL (${count})`;
     }
 
     function sendMsg(name, total, old, current) {
@@ -129,9 +128,11 @@
     }
 
     async function sendToAll() {
-        // Filtered data ko nikalna taaki sirf wahi jaye jo screen par dikh rahe hain
         let filterText = document.getElementById('class_filter').value.toLowerCase();
-        let visibleRows = allFetchedData.filter(r => r.class.toLowerCase().includes(filterText));
+        let visibleRows = allFetchedData.filter(r => 
+            String(r.class).toLowerCase().includes(filterText) || 
+            String(r.name).toLowerCase().includes(filterText)
+        );
         
         Swal.fire('Bulk Start', `${visibleRows.length} messages process ho rahe hain...`, 'info');
         for (let i = 0; i < visibleRows.length; i++) {
@@ -140,7 +141,7 @@
             let mFee = feesStructure[r.class] || 0;
             if(oldDue + mFee > 0) {
                 sendMsg(r.name, (oldDue + mFee), oldDue, mFee);
-                await new Promise(r => setTimeout(r, 1800)); // 1.8 second gap
+                await new Promise(r => setTimeout(r, 1800)); 
             }
         }
     }
